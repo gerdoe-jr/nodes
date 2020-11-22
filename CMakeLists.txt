@@ -191,7 +191,11 @@ if(NOT MSVC)
   add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wno-unused-parameter)
   add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wno-missing-field-initializers)
   add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wformat=2) # Warn about format strings.
-  add_c_compiler_flag_if_supported(OUR_FLAGS_DEP -Wno-implicit-function-declaration)
+
+  # todo: fix me
+  if (NOT TARGET_OS STREQUAL "linux")
+    add_c_compiler_flag_if_supported(OUR_FLAGS_DEP -Wno-implicit-function-declaration)
+  endif()
 endif()
 
 if(NOT MSVC)
@@ -216,6 +220,7 @@ function(set_glob VAR GLOBBING EXTS DIRECTORY) # ...
 
   if(NOT FILES STREQUAL GLOB_RESULT)
     message(AUTHOR_WARNING "${VAR} does not contain every file from directory ${DIRECTORY}")
+
     set(LIST_BUT_NOT_GLOB)
     if(POLICY CMP0057)
       cmake_policy(SET CMP0057 NEW)
@@ -504,9 +509,6 @@ set_src(DEP_RESTCLIENT_SRC GLOB_RECURSE src/engine/external/restclient
   restclient.cpp
 )
 add_library(restclient EXCLUDE_FROM_ALL OBJECT ${DEP_RESTCLIENT_SRC})
-if(TARGET_OS STREQUAL "windows")
-  target_link_libraries(restclient ${CURL_LIBRARIES})
-endif()
 target_include_directories(restclient PRIVATE ${CURL_INCLUDE_DIRS})
 
 list(APPEND TARGETS_DEP json md5 restclient)
@@ -1018,6 +1020,7 @@ set(EXPECTED_DATA
   maps/piiko_airen1.map
   maps/pikanodes.map
   maps/supremacy.map
+  nodes/blocks.png
   nodes/buildings/blue_ammo1.png
   nodes/buildings/blue_ammo2.png
   nodes/buildings/blue_ammo3.png
@@ -1045,7 +1048,6 @@ set(EXPECTED_DATA
   nodes/buildings/red_turret1.png
   nodes/buildings/red_turret2.png
   nodes/buildings/turrets.png
-  nodes/blocks.png
   nodes/buildmenu.png
   nodes/fx_bomb.png
   nodes/fx_crate.png
@@ -1055,8 +1057,8 @@ set(EXPECTED_DATA
   nodes/fx_ice_explosion.png
   nodes/gui.png
   nodes/no_power.png
-  nodes/ui/nodes_logo.png
   nodes/ui/nodes_icon.png
+  nodes/ui/nodes_logo.png
   particles.png
   race_flag.png
   skins/beaver.json
@@ -1064,8 +1066,8 @@ set(EXPECTED_DATA
   skins/bluestripe.json
   skins/body/bat.png
   skins/body/bear.png
-  skins/body/bomb.png
   skins/body/beaver.png
+  skins/body/bomb.png
   skins/body/dog.png
   skins/body/force.png
   skins/body/fox.png
@@ -1358,6 +1360,7 @@ set_src(BASE GLOB_RECURSE src/base
   tl/threading.h
   vmath.h
 )
+
 set_src(ENGINE_INTERFACE GLOB src/engine
   client.h
   config.h
@@ -1460,13 +1463,12 @@ set(GAME_GENERATED_SHARED
 set(DEPS ${DEP_JSON} ${DEP_MD5} ${ZLIB_DEP} ${DEP_RESTCLIENT})
 
 # Libraries
-set(LIBS ${CMAKE_THREAD_LIBS_INIT} ${ZLIB_LIBRARIES} ${CRYPTO_LIBRARIES} ${PLATFORM_LIBS})
+set(LIBS ${CMAKE_THREAD_LIBS_INIT} ${ZLIB_LIBRARIES} ${CRYPTO_LIBRARIES} ${PLATFORM_LIBS} ${CURL_LIBRARIES})
 
 # Targets
 add_library(engine-shared EXCLUDE_FROM_ALL OBJECT ${ENGINE_INTERFACE} ${ENGINE_SHARED} ${ENGINE_GENERATED_SHARED} ${BASE})
 add_library(game-shared EXCLUDE_FROM_ALL OBJECT ${GAME_SHARED} ${GAME_GENERATED_SHARED})
 list(APPEND TARGETS_OWN engine-shared game-shared)
-
 
 ########################################################################
 # CLIENT
@@ -1606,7 +1608,6 @@ if(CLIENT)
   # Libraries
   set(LIBS_CLIENT
     ${LIBS}
-    ${CURL_LIBRARIES}
     ${FREETYPE_LIBRARIES}
     ${PNGLITE_LIBRARIES}
     ${SDL2_LIBRARIES}
@@ -1720,7 +1721,7 @@ else()
 endif()
 
 # Libraries
-set(LIBS_SERVER ${LIBS} ${CURL_LIBRARIES})
+set(LIBS_SERVER ${LIBS})
 
 # Target
 set(TARGET_SERVER ${SERVER_EXECUTABLE})
@@ -1750,24 +1751,21 @@ endif()
 
 set_src(VERSIONSRV_SRC GLOB src/versionsrv mapversions.h versionsrv.cpp versionsrv.h)	
 list(APPEND VERSIONSRV_SRC ${PROJECT_BINARY_DIR}/src/generated/nethash.cpp)	
-
-
 set(TARGET_VERSIONSRV versionsrv)	
 
 add_executable(${TARGET_VERSIONSRV} EXCLUDE_FROM_ALL ${VERSIONSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})	
-
 target_link_libraries(${TARGET_VERSIONSRV} ${LIBS})	
-
+list(APPEND TARGETS_OWN ${TARGET_VERSIONSRV})	
 list(APPEND TARGETS_LINK ${TARGET_VERSIONSRV})	
 
-set(TARGETS_TOOLS)	
+set(TARGETS_TOOLS)
 set_src(TOOLS GLOB src/tools	
-  crapnet.cpp	
-  fake_server.cpp	
+  crapnet.cpp
   map_resave.cpp	
   map_version.cpp	
   packetgen.cpp	
 )	
+
 foreach(ABS_T ${TOOLS})	
   file(RELATIVE_PATH T "${PROJECT_SOURCE_DIR}/src/tools/" ${ABS_T})	
   if(T MATCHES "\\.cpp$")	
@@ -1781,7 +1779,7 @@ foreach(ABS_T ${TOOLS})
     target_link_libraries(${TOOL} ${LIBS})	
     list(APPEND TARGETS_TOOLS ${TOOL})	
   endif()	
-endforeach()	
+endforeach()
 
 list(APPEND TARGETS_OWN ${TARGETS_TOOLS})	
 list(APPEND TARGETS_LINK ${TARGETS_TOOLS})	

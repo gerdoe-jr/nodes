@@ -320,7 +320,7 @@ void CCharacter::FireWeapon()
 
 			CBuilding* apBuildings[1];
 			CCharacter *apEnts[MAX_CLIENTS];
-			int Hits = 0;
+			// int Hits = 0;
 			int Num = GameServer()->m_World.FindEntities(m_Pos, GetProximityRadius(), (CEntity**)apBuildings, 1, CGameWorld::ENTTYPE_BUILDING);
 			int Num2 = GameServer()->m_World.FindEntities(ProjStartPos, GetProximityRadius() * 0.5f, (CEntity**)apEnts, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
 
@@ -391,9 +391,9 @@ void CCharacter::FireWeapon()
 			if (m_NumObjectsHit > 0)
 			{
 				if (m_CrateBuff != CRATE_CONSTRUCTION)
-					m_ReloadTimer = Server()->TickSpeed() / 2;
+					m_ReloadTimer = Server()->TickSpeed() / Config()->m_SvBuildSpeed;
 				else
-					m_ReloadTimer = Server()->TickSpeed() / 4;
+					m_ReloadTimer = Server()->TickSpeed() / (Config()->m_SvBuildSpeed * 2);
 			}
 			else
 				m_ReloadTimer = Server()->TickSpeed() / 3;

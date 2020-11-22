@@ -25,6 +25,7 @@
 #include <engine/shared/packer.h>
 #include <engine/shared/protocol.h>
 #include <engine/shared/snapshot.h>
+#include <engine/shared/jsonwriter.h>
 
 #include "server.h"
 
@@ -686,6 +687,7 @@ int CServer::NewClientCallback(int ClientID, void *pUser)
 	pThis->m_aClients[ClientID].m_pMapListEntryToSend = 0;
 	pThis->m_aClients[ClientID].m_NoRconNote = false;
 	pThis->m_aClients[ClientID].m_Quitting = false;
+	pThis->m_aClients[ClientID].m_Latency = 0;
 	pThis->m_aClients[ClientID].Reset();
 
 	return 0;
@@ -718,7 +720,11 @@ int CServer::DelClientCallback(int ClientID, const char *pReason, void *pUser)
 	pThis->m_aClients[ClientID].m_pMapListEntryToSend = 0;
 	pThis->m_aClients[ClientID].m_NoRconNote = false;
 	pThis->m_aClients[ClientID].m_Quitting = false;
+	pThis->m_aClients[ClientID].m_Latency = 0;
 	pThis->m_aClients[ClientID].m_Snapshots.PurgeAll();
+
+	pThis->DoServerRegistration();
+
 	return 0;
 }
 
@@ -936,6 +942,7 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 				m_aClients[ClientID].m_State = CClient::STATE_INGAME;
 				SendServerInfo(ClientID);
 				GameServer()->OnClientEnter(ClientID);
+				DoServerRegistration();
 			}
 		}
 		else if(Msg == NETMSG_INPUT)
@@ -1909,13 +1916,14 @@ void CServer::HandleServerRegistration()
 
 void CServer::ServerRegisterCallback(void* pUser, int ResponseCode, std::string Response)
 {
-	CServer* pSelf = (CServer*)pUser;
 	if (ResponseCode != 200)
 		dbg_msg("master", "registration failed (%d): %s", ResponseCode, Response.c_str());
 }
 
 void CServer::DoServerRegistration()
 {
+	m_LastServerRegistration = time_get();
+
 	// count the clients
 	int PlayerCount = 0, ClientCount = 0;
 	for (int i = 0; i < MAX_CLIENTS; i++)
@@ -1939,45 +1947,79 @@ void CServer::DoServerRegistration()
 	CHttpRequest* pRequest = m_pHttp->PrepareRequest("https://master.teeworlds.network/");
 	pRequest->m_pUser = this;
 	pRequest->m_pCallback = ServerRegisterCallback;
-	pRequest->AddString("hostname", Config()->m_SvHostname);
-	pRequest->AddInteger("port", Config()->m_SvPort);
-	pRequest->AddString("name", Config()->m_SvName);
-	pRequest->AddString("gamemode", GameServer()->GameType());
-	pRequest->AddString("map", GetMapName());
-	pRequest->AddString("version", GameServer()->Version());
-	pRequest->AddInteger("flags", Flags);
-	pRequest->AddInteger("skill_level", Config()->m_SvSkillLevel);
-	pRequest->AddInteger("players_online", PlayerCount);
-	pRequest->AddInteger("players_max", Config()->m_SvPlayerSlots);
-	pRequest->AddInteger("clients_online", ClientCount);
-	pRequest->AddInteger("clients_max", max(ClientCount, Config()->m_SvMaxClients));
-	pRequest->AddString("modification", "nodes");
 
-	// player list
-	std::string JsonPlayerlist;
-	
+	// build server info
+	IOHANDLE File = io_open("serverinfo-debug.json", IOFLAG_WRITE);
+	if (!File)
+		return;
+
+	CJsonWriter* pWriter = new CJsonWriter(File);
+
+	pWriter->BeginObject();
+	pWriter->WriteAttribute("hostname");
+	pWriter->WriteStrValue(Config()->m_SvHostname);
+	pWriter->WriteAttribute("port");
+	pWriter->WriteIntValue(Config()->m_SvPort);
+	pWriter->WriteAttribute("name");
+	pWriter->WriteStrValue(Config()->m_SvName);
+	pWriter->WriteAttribute("gamemode");
+	pWriter->WriteStrValue(GameServer()->GameType());
+	pWriter->WriteAttribute("map");
+	pWriter->WriteStrValue(GetMapName());
+	pWriter->WriteAttribute("version");
+	pWriter->WriteStrValue(GameServer()->Version());
+	pWriter->WriteAttribute("flags");
+	pWriter->WriteIntValue(Flags);
+	pWriter->WriteAttribute("skill_level");
+	pWriter->WriteIntValue(Config()->m_SvSkillLevel);
+	pWriter->WriteAttribute("players_online");
+	pWriter->WriteIntValue(PlayerCount);
+	pWriter->WriteAttribute("players_max");
+	pWriter->WriteIntValue(Config()->m_SvPlayerSlots);
+	pWriter->WriteAttribute("clients_online");
+	pWriter->WriteIntValue(ClientCount);
+	pWriter->WriteAttribute("clients_max");
+	pWriter->WriteIntValue(max(ClientCount, Config()->m_SvMaxClients));
+	pWriter->WriteAttribute("modification");
+	pWriter->WriteStrValue("nodes");
+
+	pWriter->WriteAttribute("player_list");
+	pWriter->BeginArray();
 	for (int i = 0; i < MAX_CLIENTS; i++)
 	{
 		if (m_aClients[i].m_State != CClient::STATE_EMPTY)
 		{
-			char aItem[256];
-			str_format(aItem, sizeof(aItem), "{\"name\": \"%s\", \"clan\": \"%s\", \"country\": %d, \"score\": %d, \"type\": %d, \"team\": %d, \"ping\": %d},", 
-				ClientName(i), 
-				ClientClan(i), 
-				m_aClients[i].m_Country, 
-				m_aClients[i].m_Score, 
-				GameServer()->IsClientPlayer(i) ? 0 : 1,
-				GameServer()->GetTeam(i),
-				m_aClients[i].m_Latency);
-
-			JsonPlayerlist.append(aItem);
+			pWriter->BeginObject();
+			pWriter->WriteAttribute("name");
+			pWriter->WriteStrValue(ClientName(i));
+			pWriter->WriteAttribute("clan");
+			pWriter->WriteStrValue(ClientClan(i));
+			pWriter->WriteAttribute("country");
+			pWriter->WriteIntValue(m_aClients[i].m_Country);
+			pWriter->WriteAttribute("score");
+			pWriter->WriteIntValue(m_aClients[i].m_Score);
+			pWriter->WriteAttribute("type");
+			pWriter->WriteIntValue(GameServer()->IsClientPlayer(i) ? 0 : 1);
+			pWriter->WriteAttribute("team");
+			pWriter->WriteIntValue(GameServer()->GetTeam(i));
+			pWriter->WriteAttribute("ping");
+			pWriter->WriteIntValue(m_aClients[i].m_Latency);
+			pWriter->EndObject();
 		}
 	}
+	pWriter->EndArray();
+	pWriter->EndObject();
 
-	JsonPlayerlist = JsonPlayerlist.substr(0, JsonPlayerlist.size() - 1);
-	pRequest->AddArray("player_list", JsonPlayerlist);
+	delete pWriter;
+	pWriter = 0;
 
+	char* pOutput = fs_read_str("serverinfo-debug.json");
+	std::string JsonServerInfo = std::string(pOutput);
+	mem_free(pOutput);
+
+	if (!Config()->m_Debug)
+		fs_remove("serverinfo-debug.json");
+
+	pRequest->m_Data = JsonServerInfo;
 	m_pHttp->ExecuteRequest(pRequest);
-
-	m_LastServerRegistration = time_get();
 }

@@ -253,7 +253,7 @@ void CBuilding::Tick()
 				{
 					m_ReloadTime = m_ReloadTime - ((m_ReloadTime / 10) * 2);
 					m_MaxAimRange += 100;
-					m_VeteranTTLBonus = 1.8;
+					m_VeteranTTLBonus = 1.8f;
 				}
 				else if (m_VeteranShots == 200 && Config()->m_SvVeteranTurrets)
 				{
@@ -337,7 +337,7 @@ void CBuilding::Tick()
 
 	case B_SHIELD:
 	{
-		if (Server()->Tick() % 50 == 0 && m_Power)
+		if (Server()->Tick() % Server()->TickSpeed() == 0 && m_Power)
 		{
 			if (m_Armor < 30)
 				m_Armor++;
@@ -583,7 +583,7 @@ bool CBuilding::TakeDamage(vec2 Force, int Dmg, int From, int PrevFrom, int Weap
 	if (From < 0 && PrevFrom >= 0)
 		From = PrevFrom;
 
-	if (From >= 0 && GameServer()->m_apPlayers[From] && GameServer()->m_apPlayers[From]->GetTeam() == m_Team)
+	if (From >= 0 && GameServer()->m_apPlayers[From] && GameServer()->m_apPlayers[From]->GetTeam() == m_Team && !Config()->m_SvBuildingsFriendlyFire)
 		return false;
 
 	m_DamageTaken++;
@@ -601,7 +601,7 @@ bool CBuilding::TakeDamage(vec2 Force, int Dmg, int From, int PrevFrom, int Weap
 		m_Health -= Dmg;
 
 	m_DamageTakenTick = Server()->Tick();
-	if (m_DamageTick + 150 < Server()->Tick())
+	if (m_DamageTick + (3 * Server()->TickSpeed()) < Server()->Tick())
 	{
 		m_DamageTick = Server()->Tick();
 
@@ -689,7 +689,8 @@ bool CBuilding::IsGrounded()
 
 void CBuilding::Snap(int SnappingClient)
 {
-	if (NetworkClipped(SnappingClient, m_Pos) || (!GameServer()->GetPlayerChar(SnappingClient) && GameServer()->m_apPlayers[SnappingClient]->m_SelectSpawn && (m_Type != B_SPAWN || m_Team != GameServer()->m_apPlayers[SnappingClient]->GetTeam())))
+	if (NetworkClipped(SnappingClient, m_Pos) || 
+		(!GameServer()->GetPlayerChar(SnappingClient) && GameServer()->m_apPlayers[SnappingClient]->m_SelectSpawn && (m_Type != B_SPAWN || m_Team != GameServer()->m_apPlayers[SnappingClient]->GetTeam())))
 		return;
 
 	CNetObj_Building* pBuilding = static_cast<CNetObj_Building*>(Server()->SnapNewItem(NETOBJTYPE_BUILDING, GetID(), sizeof(CNetObj_Building)));
